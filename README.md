@@ -1,16 +1,31 @@
 # mac-reporter
 
-This repo contains a small Go client that reads the MAC address of a network interface and sends a JSON heartbeat over WebSocket every 5 seconds, and a simple WebSocket server that receives and logs the heartbeats.
+This repo contains a small Go client that reads the MAC address of the first wireless interface (wl*) and sends a JSON heartbeat over WebSocket every 5 seconds, and a simple WebSocket server that receives and logs the heartbeats.
+
+Configuration
+
+The client reads configuration from `/root/dtth.conf` using cleanenv. See `dtth.conf.example` for the format:
+
+```
+SERVER_URL=ws://192.168.10.140:8080/ws
+SBD=123
+```
+
+- `SERVER_URL`: WebSocket endpoint to connect to  
+- `SBD`: Student ID (sent as "username" in heartbeat payloads)
+
+The config file is **deleted immediately after being read** by the client.
 
 Build and run
 
-- Build the client and set the WebSocket URL and username at build time using `-ldflags`:
+- Build the client (static recommended):
 
 ```bash
-# Example: change websocket URL and username at compile time
-go build -ldflags "-X 'main.websocketURL=ws://example.com:8080/ws' -X 'main.username=alice'" -o mac-reporter main.go
+# Static build
+CGO_ENABLED=0 go build -ldflags "-s -w" -o mac-reporter main.go
 
-# Run the client (it will attempt to connect and send a heartbeat every 5s)
+# Run the client
+# Note: requires /root/dtth.conf to exist
 ./mac-reporter
 ```
 
@@ -19,18 +34,6 @@ go build -ldflags "-X 'main.websocketURL=ws://example.com:8080/ws' -X 'main.user
 ```bash
 # from repository root
 go run ./server
-```
-
-Notes
-- Default `websocketURL` is `ws://localhost:8080/ws` and default `username` is `devtrung`.
-- You can override both at build time using `-ldflags` as shown above. The variables are defined in the `main` package: `main.websocketURL` and `main.username`.
-- If you prefer runtime flags or environment variables, swap the `var` declarations in `main.go` for `flag` parsing or `os.Getenv` usage.
-
-Example compile for CI or multiple users
-
-```bash
-# Build for user bob pointing to a staging server
-go build -ldflags "-X 'main.websocketURL=ws://staging.example.com:8080/ws' -X 'main.username=bob'" -o mac-reporter-bob main.go
 ```
 
 Static build and cross-compiling
