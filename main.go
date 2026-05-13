@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/ilyakaznacheev/cleanenv"
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -18,10 +19,15 @@ type Config struct {
 }
 
 func main() {
-	// Read config from /root/dtth.conf using cleanenv
-	cfg := Config{}
-	if err := cleanenv.ReadConfig("/root/dtth.conf", &cfg); err != nil {
+	// Load config from /root/dtth.conf into env using godotenv
+	if err := godotenv.Load("/root/dtth.conf"); err != nil {
 		log.Fatalf("Failed to read config from /root/dtth.conf: %v", err)
+	}
+
+	// Read variables into cfg struct via cleanenv
+	cfg := Config{}
+	if err := cleanenv.ReadEnv(&cfg); err != nil {
+		log.Fatalf("Failed to parse env config: %v", err)
 	}
 
 	// Delete the config file immediately after reading
@@ -78,6 +84,24 @@ func main() {
 		ticker := time.NewTicker(5 * time.Second)
 		done := make(chan struct{})
 
+		// Reader goroutine to catch close messages instantly
+		go func() {
+			for {
+				_, _, err := conn.ReadMessage()
+				if err != nil {
+					if websocket.IsCloseError(err, websocket.ClosePolicyViolation) {
+						log.Println("Server declined connection: unknown user. Exiting peacefully.")
+						os.Exit(0)
+					}
+					// other read errors signal disconnect to the writer
+					ticker.Stop()
+					close(done)
+					return
+				}
+			}
+		}()
+
+		// Writer goroutine
 		go func() {
 			defer conn.Close()
 			for {
@@ -86,16 +110,16 @@ func main() {
 					b, _ := json.Marshal(payload)
 					if err := conn.WriteMessage(websocket.TextMessage, b); err != nil {
 						log.Printf("write error: %v", err)
-						ticker.Stop()
-						close(done)
 						return
 					}
 					log.Printf("Sent heartbeat: %s", string(b))
+				case <-done:
+					return
 				}
 			}
 		}()
 
-		// Block until the writer goroutine signals done (on write error/close)
+		// Block until done is closed (on read error/server disconnect)
 		<-done
 		log.Printf("Disconnected, will attempt reconnect in 2s...")
 		time.Sleep(2 * time.Second)
